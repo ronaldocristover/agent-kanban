@@ -1,0 +1,13 @@
+{
+  "name": "agent-kanban",
+  "private": true,
+  "workspaces": ["backend", "web"],
+  "scripts": {
+    "dev": "bun --cwd backend run dev & bash -c 'cd web && ./node_modules/.bin/vite dev --port 5173' & wait",
+    "build": "bash -c 'cd web && ./node_modules/.bin/vite build'",
+    "start": "bun --cwd backend run start",
+    "test": "bun test backend/test",
+    "typecheck": "bunx tsc --noEmit --project backend/tsconfig.json",
+    "lint": "biome check ."
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "agent-kanban": {
+      "command": "bun",
+      "args": ["--cwd", "backend", "run", "mcp"],
+      "env": { "BACKEND_URL": "http://127.0.0.1:3000" }
+    }
+  }
+}
