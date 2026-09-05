@@ -177,7 +177,21 @@ Restart opencode; `list_tasks` etc. appear as tools.
 
 ### Hermes
 
-Copy `skills/hermes/agent-kanban/SKILL.md` into your hermes skills dir (per your hermes config). MCP snippet in the skill uses an absolute path — replace `/absolute/path/to/agent-kanban`.
+Copy the skill into your Hermes skills directory (the repo keeps a copy at `skills/hermes/agent-kanban/SKILL.md`):
+
+```bash
+# default → $HOME/.hermes/skills/agent-kanban/SKILL.md (or ~/.config/hermes/skills if ~/.hermes does not exist)
+backend/scripts/copy-to-hermes.sh
+
+# custom path
+backend/scripts/copy-to-hermes.sh /path/to/hermes/skills
+HERMES_SKILLS_DIR=/custom/path backend/scripts/copy-to-hermes.sh
+HERMES_DIR=/custom/hermes backend/scripts/copy-to-hermes.sh
+make install-hermes                    # same as above (default)
+make install-hermes DEST=/custom/path  # with dest
+```
+
+MCP snippet in the skill uses an absolute path — replace `/absolute/path/to/agent-kanban` with your clone path.
 
 ### Agent workflow (all hosts)
 

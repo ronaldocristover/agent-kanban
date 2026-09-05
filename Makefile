@@ -1,4 +1,4 @@
-.PHONY: install dev build start seed seed-reset test typecheck lint clean mcp sync-skills
+.PHONY: install dev build start seed seed-reset test typecheck lint clean mcp sync-skills install-hermes
 
 install:
 	bun install
@@ -37,3 +37,6 @@ mcp:
 
 sync-skills:
 	backend/scripts/sync-skills.sh
+
+install-hermes:
+	backend/scripts/copy-to-hermes.sh $(DEST)
