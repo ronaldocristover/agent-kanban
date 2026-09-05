@@ -5,7 +5,7 @@ This repo **is** the agent-kanban board. Any agent (opencode, hermes, Claude Cod
 ## Board
 
 - **Where:** `http://127.0.0.1:3000` — `GET /api/projects` is the health check (→ `[]` if empty).
-- **If it's down:** `bun --cwd backend run dev` (dev, API only) or `bash -c 'cd web && ./node_modules/.bin/vite build' && bun --cwd backend run start` (prod, serves `web/build` on `:3000`). See `README.md` and `docs/HOW_TO.md`.
+- **If it's down:** `bash -c 'cd backend && bun run dev'` (dev, API only) or `bash -c 'cd web && ./node_modules/.bin/vite build' && bash -c 'cd backend && bun run start'` (prod, serves `web/build` on `:3000`). See `README.md` and `docs/HOW_TO.md`.
 
 ## Skill (read this first)
 

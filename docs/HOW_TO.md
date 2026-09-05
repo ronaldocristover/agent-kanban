@@ -5,7 +5,7 @@ Practical cookbook for humans and agents. For the high-level overview, see `READ
 ## 1. Prerequisites
 
 - **Bun ≥ 1.4**: `curl -fsSL https://bun.sh/install | bash && exec $SHELL`
-- Check: `bun --version` → `1.4.x`, `bun --cwd backend run typecheck` → no output (pass).
+- Check: `bun --version` → `1.4.x`, `bash -c 'cd backend && bun run typecheck'` → no output (pass).
 
 No Docker, no Postgres, no env file. The DB lives at `data/kanban.db` (gitignored) and is created on first run.
 
@@ -25,7 +25,7 @@ make install
 ```bash
 make dev
 # equivalent:
-# bun --cwd backend run dev  (API + SSE on :3000)
+# bash -c 'cd backend && bun run dev'  (Elysia API + SSE on :3000)
 # bash -c 'cd web && ./node_modules/.bin/vite dev --port 5173' (board, proxies /api → :3000)
 ```
 
@@ -37,7 +37,7 @@ Open `http://127.0.0.1:5173` (Vite) — or `http://127.0.0.1:3000` after a `make
 make build   # vite build → web/build
 make start   # Bun serves API + web/build on :3000
 # equivalent:
-bash -c 'cd web && ./node_modules/.bin/vite build' && bun --cwd backend run start
+bash -c 'cd web && ./node_modules/.bin/vite build' && bash -c 'cd backend && bun run start'
 ```
 
 ### Docker
@@ -55,9 +55,9 @@ docker build -t agent-kanban . && docker run -p 3000:3000 -v ./data:/app/data ag
 make seed        # 3 projects (Agent Kanban, Demo Board, Backlog) + 16 tasks; skips if DB already seeded
 make seed-reset  # wipe projects/tasks/events and reseed
 # or
-bun --cwd backend run seed
-bun --cwd backend run seed -- --reset
-KANBAN_DB=/tmp/demo.db bun --cwd backend run seed
+bash -c 'cd backend && bun run seed'
+bash -c 'cd backend && bun run seed' -- --reset
+KANBAN_DB=/tmp/demo.db bash -c 'cd backend && bun run seed'
 ```
 
 Seed respects `KANBAN_DB`; with `:memory:` it is ephemeral.
@@ -79,9 +79,9 @@ If `curl: 7 Failed to connect`, the backend is not running — see **Troubleshoo
 | `HOST` | `127.0.0.1` | `0.0.0.0` for Docker / LAN |
 | `KANBAN_DB` | `data/kanban.db` | `:memory:` for tests/ephemeral runs |
 | `STATIC_DIR` | `web/build` | Custom built board path |
-| `BACKEND_URL` | `http://127.0.0.1:3000` | MCP server → REST base (only for `bun --cwd backend run mcp`) |
+| `BACKEND_URL` | `http://127.0.0.1:3000` | MCP server → REST base (only for `bash -c '\''cd backend && bun run mcp'\''`) |
 
-Example: `PORT=4000 HOST=0.0.0.0 KANBAN_DB=/tmp/kanban.db bun --cwd backend run dev`
+Example: `PORT=4000 HOST=0.0.0.0 KANBAN_DB=/tmp/kanban.db bash -c 'cd backend && bun run dev'`
 
 ## 4. Use the board (human)
 
@@ -160,7 +160,7 @@ Stdio server `backend/src/mcp.ts` wraps the REST API. See `skills/agent-kanban/S
 `.mcp.json` is already committed. Verify with `claude mcp list` or add explicitly:
 
 ```bash
-claude mcp add agent-kanban -- bun --cwd backend run mcp
+claude mcp add agent-kanban -- bash -c 'cd backend && bun run mcp'
 ```
 
 Tools: `list_projects`, `create_project`, `update_project`, `delete_project`, `list_tasks`, `create_task`, `update_task`, `delete_task`.
@@ -219,14 +219,14 @@ CI-friendly: `bun test backend/test && bunx tsc --noEmit --project backend/tscon
 
 | Symptom | Fix |
 |---|---|
-| `curl: 7 Failed to connect` | Backend not running — `bun --cwd backend run dev` or `make dev`. Check `PORT`/`HOST`. |
+| `curl: 7 Failed to connect` | Backend not running — `bash -c 'cd backend && bun run dev'` or `make dev`. Check `PORT`/`HOST`. |
 | `GET /api/projects` → `400` / `404` | Check request: POST project needs `{ name }`; POST task needs `{ project_id, title }`. 404 on task create = unknown `project_id`. |
 | Board shows `○ reconnecting` forever | Backend down or CORS/SSE blocked. Try `curl -N http://127.0.0.1:3000/api/events` directly. |
 | `vite build` → `No Svelte configuration found` | Run from `web/`: `bash -c 'cd web && ./node_modules/.bin/vite build'` (not from repo root). |
 | `bun test` → `bun-types` errors | `bun install` from repo root; backend `tsconfig.json` includes `bun-types`. |
 | Skill copies drift | `backend/scripts/sync-skills.sh`; `bun test backend/test` fails `skills-sync` if drifted. |
 | DB is empty after restart | Check `KANBAN_DB` path and that `data/` is not deleted. Use `ls -la data/` and `sqlite3 data/kanban.db "select * from projects;"`. |
-| Port already in use | `lsof -i :3000` / `kill`, or `PORT=3001 bun --cwd backend run dev`. |
+| Port already in use | `lsof -i :3000` / `kill`, or `PORT=3001 bash -c 'cd backend && bun run dev'`. |
 | Docker board is blank | Ensure `web/build` was built before `docker compose up --build` (`make build`); or build inside Dockerfile (see `Dockerfile`). |
 
 ## 9. Reference

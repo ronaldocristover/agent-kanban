@@ -2,7 +2,7 @@
 
 Lightweight kanban for **AI agents**. Agents create, claim, and move tasks via **REST** or **MCP**; humans watch the board update in realtime over **SSE**.
 
-> Built with **Bun** + `bun:sqlite` (WAL) + **SvelteKit** (`adapter-static`). One binary serves API + UI in production. No auth — binds `127.0.0.1` by default.
+> Built with **Bun** + **Elysia** + `bun:sqlite` (WAL) + **SvelteKit** (`adapter-static`). One binary serves API + UI in production. No auth — binds `127.0.0.1` by default.
 
 ```
 Agent (opencode / hermes / claude)  ──MCP/REST──►  Bun :3000  ──SSE──►  SvelteKit board
@@ -51,12 +51,12 @@ bun run build && bun run start
 
 ```bash
 # dev — two terminals
-bun --cwd backend run dev
+bash -c 'cd backend && bun run dev'
 bash -c 'cd web && ./node_modules/.bin/vite dev --port 5173'
 
 # production
 bash -c 'cd web && ./node_modules/.bin/vite build'
-bun --cwd backend run start
+bash -c 'cd backend && bun run start'
 
 # health check
 curl -sf http://127.0.0.1:3000/api/projects | python3 -m json.tool
@@ -118,7 +118,7 @@ Stdio server wrapping the REST API. See `skills/agent-kanban/SKILL.md` §2 for p
 
 ```bash
 # run directly
-BACKEND_URL=http://127.0.0.1:3000 bun --cwd backend run mcp
+BACKEND_URL=http://127.0.0.1:3000 bash -c 'cd backend && bun run mcp'
 ```
 
 - **Claude Code** — `.mcp.json` already committed. Or `claude mcp add agent-kanban -- bun --cwd backend run mcp`.
@@ -134,13 +134,14 @@ BACKEND_URL=http://127.0.0.1:3000 bun --cwd backend run mcp
 ## Repo layout
 
 ```
-backend/                 Bun + bun:sqlite + SSE + serves web/build
+backend/                 Bun + Elysia + bun:sqlite + SSE + serves web/build
   src/db.ts              openDb + migrate
   src/store.ts           projects/tasks CRUD + taskCounts
   src/events.ts          EventBus + replay/prune
   src/validate.ts        project/task body validation
-  src/routes.ts          REST handlers
-  src/index.ts           Bun.serve + SSE + static
+  src/app.ts             Elysia app (REST + SSE + CORS + static)
+  src/routes.ts          compat shim → app.ts
+  src/index.ts           start Elysia (PORT/HOST/DB/STATIC_DIR)
   src/mcp.ts             stdio MCP server (8 tools)
   src/seed.ts            seed 3 projects + 16 tasks (make seed)
   test/                  bun:test (store/api/mcp/skills-sync)

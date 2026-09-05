@@ -4,13 +4,13 @@ install:
 	bun install
 
 dev:
-	bun --cwd backend run dev & bash -c 'cd web && ./node_modules/.bin/vite dev --port 5173' & wait
+	bash -c 'cd backend && bun run dev' & bash -c 'cd web && ./node_modules/.bin/vite dev --port 5173' & wait
 
 build:
 	bash -c 'cd web && ./node_modules/.bin/vite build'
 
 start:
-	bun --cwd backend run start
+	bash -c 'cd backend && bun run start'
 
 test:
 	bun test backend/test
@@ -27,13 +27,13 @@ clean:
 	rm -rf web/build web/.svelte-kit backend/dist data/*.db
 
 seed:
-	bun --cwd backend run seed
+	bash -c 'cd backend && bun run seed'
 
 seed-reset:
-	bun --cwd backend run seed:reset
+	bash -c 'cd backend && bun run seed:reset'
 
 mcp:
-	BACKEND_URL=http://127.0.0.1:3000 bun --cwd backend run mcp
+	BACKEND_URL=http://127.0.0.1:3000 bash -c 'cd backend && bun run mcp'
 
 sync-skills:
 	backend/scripts/sync-skills.sh
