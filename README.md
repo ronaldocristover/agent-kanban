@@ -1,82 +1,170 @@
 # Agent Kanban
 
-Light kanban for AI agents. Agents manage tasks via REST or MCP; humans watch the board in realtime (SSE).
+Lightweight kanban for **AI agents**. Agents create, claim, and move tasks via **REST** or **MCP**; humans watch the board update in realtime over **SSE**.
 
-## Quick start
+> Built with **Bun** + `bun:sqlite` (WAL) + **SvelteKit** (`adapter-static`). One binary serves API + UI in production. No auth — binds `127.0.0.1` by default.
+
+```
+Agent (opencode / hermes / claude)  ──MCP/REST──►  Bun :3000  ──SSE──►  SvelteKit board
+                                         │              │
+                                         └─ SQLite ─────┘  data/kanban.db
+```
+
+## Features
+
+- **Projects** — 1 project has many tasks. `GET /api/projects` returns `taskCounts` per column.
+- **Tasks** — `todo` → `in_progress` → `done`, plus `agent_id` for claiming. `PATCH /api/tasks/:id` moves/claims.
+- **Realtime** — `GET /api/events` is `text/event-stream` with `Last-Event-ID` replay and 15s heartbeats. Board refetches on every event.
+- **MCP** — stdio server `bun --cwd backend run mcp` exposes 8 tools (`list_projects`, `create_task`, …) for opencode/hermes/claude.
+- **Skills** — canonical `skills/agent-kanban/SKILL.md` copied to `.claude/`, `.opencode/`, `skills/hermes/`; `AGENTS.md` points agents at it.
+
+## Prerequisites
+
+- **Bun ≥ 1.4** — https://bun.sh (`curl -fsSL https://bun.sh/install | bash`)
+- **Node ≥ 22** not required (only for SvelteKit typecheck fallback); Bun runs everything.
+
+## Install
 
 ```bash
-# install
+git clone <repo> agent-kanban && cd agent-kanban
 bun install
+# or: make install
+```
 
-# dev: backend on :3000, web on :5173 (proxies /api)
+## Run
+
+All run options bind `http://127.0.0.1:3000` (API) and `http://127.0.0.1:5173` in dev.
+
+### One command (recommended)
+
+```bash
+make dev      # backend :3000 + web :5173 (Vite proxies /api)
+make build    # vite build → web/build
+make start    # production: Bun serves API + web/build on :3000
+
+# equivalents without make:
 bun run dev
+bun run build && bun run start
+```
 
-# or run them separately
+### Manual
+
+```bash
+# dev — two terminals
 bun --cwd backend run dev
 bash -c 'cd web && ./node_modules/.bin/vite dev --port 5173'
 
-# production: build web, then serve from backend on :3000
+# production
 bash -c 'cd web && ./node_modules/.bin/vite build'
 bun --cwd backend run start
+
+# health check
+curl -sf http://127.0.0.1:3000/api/projects | python3 -m json.tool
 ```
 
-Health check: `GET http://127.0.0.1:3000/api/projects` → `[]` if empty.
+### Docker
 
-## Projects & tasks
+```bash
+docker compose up --build    # :3000 serves API + built board
+# or
+docker build -t agent-kanban . && docker run -p 3000:3000 -v ./data:/app/data agent-kanban
+```
 
-- **Project:** `id, name, description` — one project has many tasks.
-- **Task:** `id, projectId, title, description, status ∈ {todo,in_progress,done}, agentId, createdAt, updatedAt`.
+Environment overrides (see `docs/HOW_TO.md` for all):
+
+| Var | Default | Purpose |
+|---|---|---|
+| `PORT` | `3000` | Backend port |
+| `HOST` | `127.0.0.1` | Bind host (use `0.0.0.0` in Docker) |
+| `KANBAN_DB` | `data/kanban.db` | SQLite path (`:memory:` for tests) |
+| `STATIC_DIR` | `web/build` | Built board directory served in prod |
+| `BACKEND_URL` | `http://127.0.0.1:3000` | MCP server → REST base URL |
 
 ## REST API
 
-No auth, binds `127.0.0.1:3000` by default (`PORT`/`HOST`/`KANBAN_DB` env).
+No auth. Request bodies use **snake_case** (`project_id`, `agent_id`), responses use **camelCase** (`projectId`, `agentId`). Errors: `{ error: string }`.
 
 ```
-GET    /api/projects                          → ProjectWithCounts[]
-POST   /api/projects  { name, description? }   → ProjectWithCounts (201)
-GET    /api/projects/:id                      → ProjectWithCounts
-PATCH  /api/projects/:id { name?, description? }
-DELETE /api/projects/:id                      → 204
+GET    /api/projects                           → ProjectWithCounts[]
+POST   /api/projects  { name, description? }    → ProjectWithCounts 201
+GET    /api/projects/:id                       → ProjectWithCounts
+PATCH  /api/projects/:id { name?, description? }→ ProjectWithCounts
+DELETE /api/projects/:id                       → 204 (cascades tasks)
 
-GET    /api/tasks?project_id=&status=&agent_id=  → Task[]
-POST   /api/tasks { project_id, title, description?, status?, agent_id? }
-GET    /api/tasks/:id
-PATCH  /api/tasks/:id { title?, description?, status?, agent_id? }
+GET    /api/tasks?project_id=&status=&agent_id= → Task[]
+POST   /api/tasks { project_id, title, description?, status?, agent_id? } → Task 201
+  # status defaults to todo; invalid → 400; unknown project → 404
+GET    /api/tasks/:id                          → Task
+PATCH  /api/tasks/:id { title?, description?, status?, agent_id? } → Task
+  # project_id cannot be changed (400); invalid status → 400
 DELETE /api/tasks/:id                          → 204
 
-GET    /api/events                             → text/event-stream (SSE, Last-Event-ID replay, heartbeat)
+GET    /api/events                             → text/event-stream
+  # id: <events.id>, data: { id, type, payload, createdAt }
+  # replay: header Last-Event-ID: <id>; heartbeat: ": heartbeat" every 15s
 ```
 
-See `skills/agent-kanban/SKILL.md` for curl examples and response shapes.
+Types: `Project { id, name, description, createdAt, updatedAt, taskCounts }`, `Task { id, projectId, title, description, status, agentId, createdAt, updatedAt }`.
 
-## Using agents with the board
+Full curl table → `docs/HOW_TO.md` and `skills/agent-kanban/SKILL.md`.
 
-Agents (opencode, claude code, hermes) should follow the workflow in `skills/agent-kanban/SKILL.md`:
+## MCP (for agents)
 
-1. `list_tasks` filtered to `todo` / current project.
-2. `update_task(id, { agent_id, status: 'in_progress' })` to claim.
-3. Work, then `update_task(id, { status: 'done' })` after the commit (commit body: `Kanban-Task: <id>`).
+Stdio server wrapping the REST API. See `skills/agent-kanban/SKILL.md` §2 for per-host snippets.
 
-### MCP setup
+```bash
+# run directly
+BACKEND_URL=http://127.0.0.1:3000 bun --cwd backend run mcp
+```
 
-- **Claude Code:** `.mcp.json` in the repo already configures the stdio MCP server. Or: `claude mcp add agent-kanban -- bun --cwd backend run mcp`.
-- **opencode:** copy the `mcp` block from `skills/agent-kanban/SKILL.md` into your `opencode.json` (or opencode model config) — `type: local`, command `["bun","--cwd","backend","run","mcp"]`.
-- **Hermes:** copy `skills/hermes/agent-kanban/SKILL.md` into your hermes skills dir; MCP snippet is in the skill.
+- **Claude Code** — `.mcp.json` already committed. Or `claude mcp add agent-kanban -- bun --cwd backend run mcp`.
+- **opencode** — copy `mcp` block from `skills/agent-kanban/SKILL.md` into `opencode.json` (`type: local`).
+- **Hermes** — copy `skills/hermes/agent-kanban/SKILL.md` into your hermes skills dir.
 
-Keep the three distributed skill copies in sync: `backend/scripts/sync-skills.sh` (or edit the canonical `skills/agent-kanban/SKILL.md` and copy).
+8 tools: `list_projects`, `create_project`, `update_project`, `delete_project`, `list_tasks`, `create_task`, `update_task`, `delete_task`.
+
+## Board
+
+`web/` is SvelteKit `adapter-static`. In dev, Vite on `:5173` proxies `/api`. In prod, `web/build` is served by the Bun backend at `/` (fallback to `index.html`). Columns: Todo / In Progress / Done. Per-column "Add" form, card actions (← Todo / → Progress / ✓ Done, Edit, Delete), `agent_id` chip, relative time, topbar `● live` indicator.
 
 ## Repo layout
 
 ```
-backend/   Bun + bun:sqlite + SSE + serves web/build in production
-web/       SvelteKit (adapter-static)
-skills/    canonical skill + per-host copies
-docs/      specs
+backend/                 Bun + bun:sqlite + SSE + serves web/build
+  src/db.ts              openDb + migrate
+  src/store.ts           projects/tasks CRUD + taskCounts
+  src/events.ts          EventBus + replay/prune
+  src/validate.ts        project/task body validation
+  src/routes.ts          REST handlers
+  src/index.ts           Bun.serve + SSE + static
+  src/mcp.ts             stdio MCP server (8 tools)
+  test/                  bun:test (store/api/mcp/skills-sync)
+  scripts/sync-skills.sh keep 3 skill copies in sync
+web/                     SvelteKit + adapter-static
+  src/lib/types.ts, api.ts
+  src/routes/+page.svelte board
+skills/agent-kanban/SKILL.md   canonical skill (source of truth)
+.claude/skills/agent-kanban/SKILL.md
+.opencode/skills/agent-kanban/SKILL.md
+skills/hermes/agent-kanban/SKILL.md
+docs/superpowers/specs/  design spec
+docs/HOW_TO.md           cookbook (curl, MCP, docker, troubleshooting)
+docs/CHANGES.md          changelog
 ```
 
-## Tests
+## Tests & quality
 
 ```bash
-bun test                  # backend store + API + MCP + skill sync
-bash -c 'cd web && ./node_modules/.bin/vite build'  # web build check
+make test        # bun test backend/test (12 tests) + web build check
+make typecheck   # tsc --noEmit (backend)
+make lint        # biome check .
+# or
+bun test backend/test
+bash -c 'cd web && ./node_modules/.bin/vite build'
 ```
+
+See `docs/CHANGES.md` for version history and `docs/HOW_TO.md` for troubleshooting.
+
+## License
+
+MIT — see `LICENSE` if present, otherwise treat as MIT.

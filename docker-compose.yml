@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3000"
+      KANBAN_DB: "/app/data/kanban.db"
+    volumes:
+      - kanban-data:/app/data
+
+volumes:
+  kanban-data:
