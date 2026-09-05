@@ -34,6 +34,17 @@ Initial release. Implements `docs/superpowers/specs/2026-09-05-agent-kanban-desi
 
 - `README.md` / `docs/HOW_TO.md`: document `make seed` / `make install-hermes` and script usage; repo layout now lists `seed.ts` + `copy-to-hermes.sh`.
 
+## [0.3.0] — 2026-09-05
+
+### Changed
+
+- **Backend framework** (`backend/src/app.ts`, `backend/src/index.ts`): migrated from custom `Bun.serve` router to **Elysia** (`elysia`, `@elysiajs/cors`, `@elysiajs/static`) — same REST contract, SSE `Last-Event-ID` replay, static `web/build` fallback, CORS. `backend/src/routes.ts` now deprecated shim to `app.ts`. Added `createApp({db,bus})` factory for `app.handle` tests. `Makefile`/`README`/`AGENTS`/`HOW_TO` now use `bash -c 'cd backend && bun run ...'` (fixes `bun --cwd` invocation).
+- **Frontend style** (`web/src/routes/+page.svelte`): status label colors — `todo` gray (`#64748b`), `in_progress` orange (`#ea580c`), `done` green (`#16a34a`); label-only (removed column/card accents per request); enlarged task description (new-task `textarea` rows 3, edit `rows 4`, card desc `13px`/`1.5` with padded `#f8fafc` box, `max-height 160px` scroll).
+
+### Verified
+
+- `bun test backend/test` 12 pass, `tsc --noEmit` pass, `vite build` pass, API CRUD (including long description, `in_progress` orange → `done` green, 400/204), SSE replay, MCP 8 tools via Elysia, static on `:3000`, seed 3 projects.
+
 ## [Unreleased]
 
 - Planned (out of scope for 0.1.x): task ordering/drag, priority/labels, auth, remote MCP transport.
