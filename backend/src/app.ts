@@ -1,12 +1,15 @@
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
-import type { Database } from 'bun:sqlite';
+import type { Db } from './db.ts';
 import type { EventBus } from './events.ts';
 import {
+  ConflictError,
   createProject,
   deleteProject,
   getProject,
   getTaskCounts,
+  getTaskHistory,
+  listAudits,
   listProjects,
   updateProject,
   createTask,
@@ -19,7 +22,7 @@ import { validateProjectBody, validateTaskBody } from './validate.ts';
 import path from 'node:path';
 import { existsSync, statSync } from 'node:fs';
 
-export type AppCtx = { db: Database; bus: EventBus };
+export type AppCtx = { db: Db; bus: EventBus };
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
@@ -45,14 +48,15 @@ export function createApp(ctx: AppCtx, opts?: { staticDir?: string }) {
       let unsubscribe: (() => void) | undefined;
       let interval: Timer | undefined;
       const stream = new ReadableStream({
-        start(controller) {
+        async start(controller) {
           const enc = new TextEncoder();
           const send = (e: { id: number; type: string; payload: unknown; createdAt: string }) => {
             try {
               controller.enqueue(enc.encode(`id: ${e.id}\ndata: ${JSON.stringify({ id: e.id, type: e.type, payload: e.payload, createdAt: e.createdAt })}\n\n`));
             } catch {}
           };
-          for (const e of ctx.bus.replayAfter(Number.isFinite(lastEventId) ? lastEventId : 0)) send(e);
+          const replayed = await ctx.bus.replayAfter(Number.isFinite(lastEventId) ? lastEventId : 0);
+          for (const e of replayed) send(e);
           unsubscribe = ctx.bus.subscribe(send);
           interval = setInterval(() => {
             try { controller.enqueue(enc.encode(': heartbeat\n\n')); } catch {}
@@ -74,22 +78,22 @@ export function createApp(ctx: AppCtx, opts?: { staticDir?: string }) {
     })
 
     // Projects
-    .get('/api/projects', () => json(listProjects(ctx.db)))
+    .get('/api/projects', async () => json(await listProjects(ctx.db)))
     .post('/api/projects', async ({ request }) => {
       const body = await parseBody(request);
       if (body === null) return err('invalid JSON', 400);
       const v = validateProjectBody(body, false);
       if (!v.ok) return err(v.error, 400);
-      const project = createProject(ctx.db, { name: v.value.name!, description: v.value.description });
+      const project = await createProject(ctx.db, { name: v.value.name!, description: v.value.description });
       const withCounts = { ...project, taskCounts: { todo: 0, in_progress: 0, done: 0, total: 0 } as const };
-      ctx.bus.emit('project.created', project);
+      await ctx.bus.emit('project.created', project);
       return json(withCounts, 201);
     })
-    .get('/api/projects/:id', ({ params }) => {
+    .get('/api/projects/:id', async ({ params }) => {
       const id = decodeURIComponent(params.id);
-      const p = getProject(ctx.db, id);
+      const p = await getProject(ctx.db, id);
       if (!p) return err('project not found', 404);
-      return json({ ...p, taskCounts: getTaskCounts(ctx.db, id) });
+      return json({ ...p, taskCounts: await getTaskCounts(ctx.db, id) });
     })
     .patch('/api/projects/:id', async ({ params, request }) => {
       const id = decodeURIComponent(params.id);
@@ -97,33 +101,34 @@ export function createApp(ctx: AppCtx, opts?: { staticDir?: string }) {
       if (body === null) return err('invalid JSON', 400);
       const v = validateProjectBody(body, true);
       if (!v.ok) return err(v.error, 400);
-      const updated = updateProject(ctx.db, id, v.value);
+      const updated = await updateProject(ctx.db, id, v.value);
       if (!updated) return err('project not found', 404);
-      ctx.bus.emit('project.updated', { ...updated, taskCounts: getTaskCounts(ctx.db, id) });
-      return json({ ...updated, taskCounts: getTaskCounts(ctx.db, id) });
+      const counts = await getTaskCounts(ctx.db, id);
+      await ctx.bus.emit('project.updated', { ...updated, taskCounts: counts });
+      return json({ ...updated, taskCounts: counts });
     })
-    .delete('/api/projects/:id', ({ params }) => {
+    .delete('/api/projects/:id', async ({ params }) => {
       const id = decodeURIComponent(params.id);
-      const ok = deleteProject(ctx.db, id);
+      const ok = await deleteProject(ctx.db, id);
       if (!ok) return err('project not found', 404);
-      ctx.bus.emit('project.deleted', { id });
+      await ctx.bus.emit('project.deleted', { id });
       return new Response(null, { status: 204 });
     })
 
     // Tasks
-    .get('/api/tasks', ({ request }) => {
+    .get('/api/tasks', async ({ request }) => {
       const url = new URL(request.url);
       const projectId = url.searchParams.get('project_id') ?? undefined;
       const status = url.searchParams.get('status') ?? undefined;
       const agentId = url.searchParams.has('agent_id') ? (url.searchParams.get('agent_id') as string) : undefined;
-      return json(listTasks(ctx.db, { projectId, status, agentId }));
+      return json(await listTasks(ctx.db, { projectId, status, agentId }));
     })
     .post('/api/tasks', async ({ request }) => {
       const body = await parseBody(request);
       if (body === null) return err('invalid JSON', 400);
       const v = validateTaskBody(body, false);
       if (!v.ok) return err(v.error, 400);
-      const task = createTask(ctx.db, {
+      const task = await createTask(ctx.db, {
         projectId: v.value.project_id!,
         title: v.value.title!,
         description: v.value.description,
@@ -131,12 +136,12 @@ export function createApp(ctx: AppCtx, opts?: { staticDir?: string }) {
         agentId: v.value.agent_id,
       });
       if (!task) return err('project not found', 404);
-      ctx.bus.emit('task.created', task);
+      await ctx.bus.emit('task.created', task);
       return json(task, 201);
     })
-    .get('/api/tasks/:id', ({ params }) => {
+    .get('/api/tasks/:id', async ({ params }) => {
       const id = decodeURIComponent(params.id);
-      const t = getTask(ctx.db, id);
+      const t = await getTask(ctx.db, id);
       if (!t) return err('task not found', 404);
       return json(t);
     })
@@ -155,17 +160,37 @@ export function createApp(ctx: AppCtx, opts?: { staticDir?: string }) {
       if (v.value.status !== undefined) patch.status = v.value.status;
       if ('agent_id' in v.value) patch.agentId = v.value.agent_id ?? null;
       if (Object.keys(patch).length === 0) return err('no fields to update', 400);
-      const updated = updateTask(ctx.db, id, patch);
-      if (!updated) return err('task not found', 404);
-      ctx.bus.emit('task.updated', updated);
-      return json(updated);
+      try {
+        const updated = await updateTask(ctx.db, id, patch);
+        if (!updated) return err('task not found', 404);
+        await ctx.bus.emit('task.updated', updated);
+        return json(updated);
+      } catch (e) {
+        if (e instanceof ConflictError) return err(e.message, 409);
+        throw e;
+      }
     })
-    .delete('/api/tasks/:id', ({ params }) => {
+    .delete('/api/tasks/:id', async ({ params }) => {
       const id = decodeURIComponent(params.id);
-      const ok = deleteTask(ctx.db, id);
+      const ok = await deleteTask(ctx.db, id);
       if (!ok) return err('task not found', 404);
-      ctx.bus.emit('task.deleted', { id });
+      await ctx.bus.emit('task.deleted', { id });
       return new Response(null, { status: 204 });
+    })
+    // Audit trail
+    .get('/api/tasks/:id/history', async ({ params }) => {
+      const id = decodeURIComponent(params.id);
+      const task = await getTask(ctx.db, id);
+      if (!task) return err('task not found', 404);
+      const history = await getTaskHistory(ctx.db, id);
+      return json(history);
+    })
+    .get('/api/audits', async ({ request }) => {
+      const url = new URL(request.url);
+      const taskId = url.searchParams.get('task_id') ?? undefined;
+      const projectId = url.searchParams.get('project_id') ?? undefined;
+      const audits = await listAudits(ctx.db, { taskId, projectId });
+      return json(audits);
     })
 
     // Fallback for unknown /api routes
@@ -175,7 +200,6 @@ export function createApp(ctx: AppCtx, opts?: { staticDir?: string }) {
     .get('/*', ({ request }) => {
       if (!existsSync(staticDir)) return new Response('not found', { status: 404 });
       const url = new URL(request.url);
-      // don't handle /api/* here (already handled above, but double guard)
       if (url.pathname.startsWith('/api/')) return new Response('not found', { status: 404 });
       let filePath = path.join(staticDir, url.pathname === '/' ? 'index.html' : url.pathname.slice(1));
       if (!filePath.startsWith(staticDir)) return new Response('forbidden', { status: 403 });

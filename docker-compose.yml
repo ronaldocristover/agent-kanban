@@ -1,14 +1,40 @@
 services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-kanban_root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-kanban}
+      MYSQL_USER: ${MYSQL_USER:-kanban}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kanban}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-kanban_root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
     environment:
       HOST: "0.0.0.0"
       PORT: "3000"
-      KANBAN_DB: "/app/data/kanban.db"
-    volumes:
-      - kanban-data:/app/data
+      MYSQL_HOST: db
+      MYSQL_PORT: "3306"
+      MYSQL_USER: ${MYSQL_USER:-kanban}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kanban}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-kanban}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-kanban_root}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
-  kanban-data:
+  mysql-data:

@@ -1,0 +1,21 @@
+{
+  "projects": [
+    {
+      "name": "Agent Kanban",
+      "description": "Board itself — track implementation, docs, and integration work.",
+      "tasks": [
+        { "title": "Implement REST CRUD for projects & tasks", "description": "Backend Elysia + MySQL. AC: all endpoints + validation 400/404/409.", "status": "done", "agent_id": "opencode-main" },
+        { "title": "Add locking to prevent race", "description": "If task locked by agent A, agent B gets 409. AC: PATCH with different agent_id → 409.", "status": "in_progress", "agent_id": "hermes-worker-1" },
+        { "title": "Add audit trail", "description": "GET /api/tasks/:id/history shows status transitions with timestamps.", "status": "todo" }
+      ]
+    },
+    {
+      "name": "Demo Board",
+      "description": "Try the board — create, claim, move, audit.",
+      "tasks": [
+        { "title": "Claim a task", "description": "PATCH /api/tasks/:id { agent_id: \"my-agent\", status: \"in_progress\" }", "status": "todo" },
+        { "title": "Check audit trail", "description": "GET /api/tasks/:id/history aftermoving through todo→in_progress→done", "status": "todo" }
+      ]
+    }
+  ]
+}

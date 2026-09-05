@@ -1,22 +1,30 @@
-import type { Database } from 'bun:sqlite';
+import type { Db } from './db.ts';
 
 export type KanbanEvent = { id: number; type: string; payload: unknown; createdAt: string };
 
 export class EventBus {
   private clients = new Set<(e: KanbanEvent) => void>();
 
-  constructor(private db: Database) {}
+  constructor(private db: Db) {}
 
-  emit(type: string, payload: unknown): KanbanEvent {
+  async emit(type: string, payload: unknown): Promise<KanbanEvent> {
     const createdAt = new Date().toISOString();
-    const result = this.db.run('INSERT INTO events (type, payload, created_at) VALUES (?, ?, ?)', [
+    const res = await this.db.run('INSERT INTO events (type, payload, created_at) VALUES (?, ?, ?)', [
       type,
       JSON.stringify(payload),
       createdAt,
     ]);
-    const event: KanbanEvent = { id: Number(result.lastInsertRowid), type, payload, createdAt };
+    const id = res.insertId ?? res.lastInsertRowid ?? 0;
+    // MySQL insertId is the new row id; for sqlite lastInsertRowid
+    // If both missing (should not), query last id
+    let eventId = Number(id);
+    if (!eventId) {
+      const row = await this.db.queryOne<{ id: number }>('SELECT MAX(id) as id FROM events');
+      eventId = row?.id ?? 0;
+    }
+    const event: KanbanEvent = { id: eventId, type, payload, createdAt };
     for (const send of this.clients) send(event);
-    this.pruneIfNeeded();
+    this.pruneIfNeeded().catch(() => {});
     return event;
   }
 
@@ -25,20 +33,26 @@ export class EventBus {
     return () => this.clients.delete(send);
   }
 
-  replayAfter(lastId: number, limit = 1000): KanbanEvent[] {
-    const rows = this.db
-      .query<{ id: number; type: string; payload: string; created_at: string }, [number, number]>(
-        'SELECT id, type, payload, created_at FROM events WHERE id > ? ORDER BY id ASC LIMIT ?',
-      )
-      .all(lastId, limit);
-    return rows.map((r) => ({ id: r.id, type: r.type, payload: JSON.parse(r.payload), createdAt: r.created_at }));
+  async replayAfter(lastId: number, limit = 1000): Promise<KanbanEvent[]> {
+    const rows = await this.db.query<{ id: number; type: string; payload: string; created_at: string }>(
+      'SELECT id, type, payload, created_at FROM events WHERE id > ? ORDER BY id ASC LIMIT ?',
+      [lastId, limit],
+    );
+    return rows.map((r) => {
+      let payload: unknown = r.payload;
+      try {
+        payload = typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload;
+      } catch {}
+      return { id: r.id, type: r.type, payload, createdAt: r.created_at };
+    });
   }
 
-  private pruneIfNeeded() {
+  private async pruneIfNeeded(): Promise<void> {
     const keep = 1000;
-    this.db.run(
-      'DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT ?)',
-      [keep],
-    );
+    if (this.db.type === 'mysql') {
+      await this.db.exec(`DELETE FROM events WHERE id NOT IN (SELECT id FROM (SELECT id FROM events ORDER BY id DESC LIMIT ${keep}) AS t)`);
+    } else {
+      await this.db.run('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT ?)', [keep]);
+    }
   }
 }

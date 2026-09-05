@@ -1,4 +1,13 @@
-import type { ProjectWithCounts, Task, KanbanEvent } from './types.ts';
+import type { ProjectWithCounts, Task, TaskAudit, KanbanEvent } from './types.ts';
+
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -17,8 +26,8 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     const msg =
       typeof data === 'object' && data !== null && 'error' in data
         ? (data as { error: string }).error
-        : res.statusText;
-    throw new Error(msg);
+        : res.statusText || `request failed with ${res.status}`;
+    throw new ApiError(msg, res.status);
   }
   return data as T;
 }
@@ -45,7 +54,17 @@ export const api = {
     req<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(input) }),
   updateTask: (id: string, patch: Record<string, unknown>) =>
     req<Task>(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-  deleteTask: (id: string) => req<void>(`/api/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  deleteTask: (id: string) => req<void>(`/api/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  getTaskHistory: (taskId: string) =>
+    req<TaskAudit[]>(`/api/tasks/${encodeURIComponent(taskId)}/history`),
+  listAudits: (filters?: { task_id?: string; project_id?: string }) => {
+    const p = new URLSearchParams();
+    if (filters?.task_id) p.set('task_id', filters.task_id);
+    if (filters?.project_id) p.set('project_id', filters.project_id);
+    const qs = p.toString() ? `?${p}` : '';
+    return req<TaskAudit[]>(`/api/audits${qs}`);
+  }
 };
 
 export function subscribeEvents(handlers: {

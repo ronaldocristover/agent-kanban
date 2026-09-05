@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, subscribeEvents } from '$lib/api';
-  import type { ProjectWithCounts, Task, KanbanEvent } from '$lib/types';
+  import { api, ApiError, subscribeEvents } from '$lib/api';
+  import type { ProjectWithCounts, Task, TaskAudit, KanbanEvent } from '$lib/types';
 
   let projects = $state<ProjectWithCounts[]>([]);
   let selectedId = $state<string | null>(null);
@@ -18,6 +18,11 @@
   let editTitle = $state('');
   let editDesc = $state('');
   let editAgent = $state('');
+
+  // audit & lock
+  let historyByTask: Record<string, TaskAudit[]> = $state({});
+  let historyLoading: Record<string, boolean> = $state({});
+  let expandedHistory: Record<string, boolean> = $state({});
 
   const selected = $derived(projects.find((p) => p.id === selectedId) ?? null);
   const todoTasks = $derived(tasks.filter((t) => t.status === 'todo'));
@@ -79,22 +84,39 @@
     } catch (e) { error = (e as Error).message; }
   }
 
+  function handleTaskError(e: unknown) {
+    const msg = (e as Error).message ?? 'unknown error';
+    if (e instanceof ApiError && e.status === 409) {
+      // Backend: "task already locked by <agent>" → normalize to "Task locked by <agent>"
+      const m = msg.match(/locked by\s+(.+)/i);
+      error = m ? `Task locked by ${m[1].trim()}` : `Task locked — ${msg}`;
+    } else if (/locked by/i.test(msg)) {
+      const m = msg.match(/locked by\s+(.+)/i);
+      error = m ? `Task locked by ${m[1].trim()}` : msg;
+    } else {
+      error = msg;
+    }
+  }
+
   async function moveTask(task: Task, to: 'todo' | 'in_progress' | 'done') {
     try {
       await api.updateTask(task.id, { status: to });
       await refreshTasks(); await refreshProjects();
-    } catch (e) { error = (e as Error).message; }
+    } catch (e) { handleTaskError(e); }
   }
 
   async function deleteTask(id: string) {
     try {
       await api.deleteTask(id);
       await refreshTasks(); await refreshProjects();
-    } catch (e) { error = (e as Error).message; }
+    } catch (e) { handleTaskError(e); }
   }
 
   function startEdit(task: Task) {
     editingId = task.id; editTitle = task.title; editDesc = task.description ?? ''; editAgent = task.agentId ?? '';
+    // auto-load audit timeline when editing
+    loadHistory(task.id);
+    expandedHistory[task.id] = true;
   }
 
   async function saveEdit() {
@@ -103,7 +125,27 @@
       await api.updateTask(editingId, { title: editTitle.trim(), description: editDesc.trim() || null, agent_id: editAgent.trim() || null });
       editingId = null;
       await refreshTasks();
-    } catch (e) { error = (e as Error).message; }
+    } catch (e) { handleTaskError(e); }
+  }
+
+  async function loadHistory(taskId: string) {
+    if (historyLoading[taskId]) return;
+    historyLoading[taskId] = true;
+    try {
+      const h = await api.getTaskHistory(taskId);
+      historyByTask[taskId] = h;
+    } catch (e) {
+      // keep existing, but surface as error if not 404
+      if (!(e instanceof ApiError && e.status === 404)) handleTaskError(e);
+    } finally {
+      historyLoading[taskId] = false;
+    }
+  }
+
+  async function toggleHistory(taskId: string) {
+    const next = !expandedHistory[taskId];
+    expandedHistory[taskId] = next;
+    if (next) await loadHistory(taskId);
   }
 
   function fmtTime(iso: string) {
@@ -186,32 +228,77 @@
           </div>
           <div class="cards">
             {#each col.tasks as task (task.id)}
-              <article class="card">
+              <article class="card" onclick={() => toggleHistory(task.id)} role="button" tabindex="0" onkeydown={(e) => e.key==='Enter' && toggleHistory(task.id)}>
                 {#if editingId === task.id}
-                  <input bind:value={editTitle} />
-                  <textarea rows="4" bind:value={editDesc} placeholder="Description"></textarea>
-                  <input bind:value={editAgent} placeholder="agent_id" />
+                  <input bind:value={editTitle} onclick={(e) => e.stopPropagation()} />
+                  <textarea rows="4" bind:value={editDesc} placeholder="Description" onclick={(e) => e.stopPropagation()}></textarea>
+                  <input bind:value={editAgent} placeholder="agent_id" onclick={(e) => e.stopPropagation()} />
                   <div class="card-actions">
-                    <button onclick={saveEdit}>Save</button>
-                    <button onclick={() => editingId = null}>Cancel</button>
+                    <button onclick={(e) => { e.stopPropagation(); saveEdit(); }}>Save</button>
+                    <button onclick={(e) => { e.stopPropagation(); editingId = null; }}>Cancel</button>
                   </div>
+                  {#if historyLoading[task.id]}
+                    <div class="timeline loading">Loading history…</div>
+                  {:else if historyByTask[task.id]?.length}
+                    <ul class="timeline">
+                      {#each historyByTask[task.id] as a (a.id)}
+                        <li class="timeline-item">
+                          <span class="from">{a.fromStatus ?? '∅'}</span>
+                          <span class="arrow">→</span>
+                          <span class="to">{a.toStatus}</span>
+                          {#if a.agentId}<span class="chip small">{a.agentId}</span>{/if}
+                          <span class="time">{fmtTime(a.changedAt)}</span>
+                          {#if a.note}<span class="note">{a.note}</span>{/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  {:else if expandedHistory[task.id]}
+                    <div class="timeline empty-tl">No history yet</div>
+                  {/if}
                 {:else}
-                  <div class="card-title">{task.title}</div>
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div class="card-title" onclick={(e) => { e.stopPropagation(); startEdit(task); }} role="button" tabindex="0" onkeydown={(e) => (e.key==='Enter' || e.key===' ') && startEdit(task)}>{task.title}</div>
                   {#if task.description}
                     <div class="card-desc">{task.description}</div>
                   {/if}
                   <div class="card-meta">
-                    {#if task.agentId}<span class="chip">{task.agentId}</span>{/if}
+                    {#if task.agentId}
+                      <span class="chip lock">🔒 locked by {task.agentId}{#if task.lockedAt} since {fmtTime(task.lockedAt)}{/if}</span>
+                    {:else}
+                      <span class="chip unlock">unlocked</span>
+                    {/if}
                     <span class="time">{fmtTime(task.updatedAt)}</span>
                   </div>
                   <div class="card-actions">
-                    {#if task.status !== 'todo'}<button onclick={() => moveTask(task, 'todo')}>← Todo</button>{/if}
-                    {#if task.status !== 'in_progress'}<button onclick={() => moveTask(task, 'in_progress')}>→ Progress</button>{/if}
-                    {#if task.status !== 'done'}<button onclick={() => moveTask(task, 'done')}>✓ Done</button>{/if}
-                    {#if task.status === 'done'}<button onclick={() => moveTask(task, 'todo')}>↺ Reopen</button>{/if}
-                    <button onclick={() => startEdit(task)}>Edit</button>
-                    <button class="danger" onclick={() => deleteTask(task.id)}>Delete</button>
+                    {#if task.status !== 'todo'}<button onclick={(e) => { e.stopPropagation(); moveTask(task, 'todo'); }}>← Todo</button>{/if}
+                    {#if task.status !== 'in_progress'}<button onclick={(e) => { e.stopPropagation(); moveTask(task, 'in_progress'); }}>→ Progress</button>{/if}
+                    {#if task.status !== 'done'}<button onclick={(e) => { e.stopPropagation(); moveTask(task, 'done'); }}>✓ Done</button>{/if}
+                    {#if task.status === 'done'}<button onclick={(e) => { e.stopPropagation(); moveTask(task, 'todo'); }}>↺ Reopen</button>{/if}
+                    <button onclick={(e) => { e.stopPropagation(); startEdit(task); }}>Edit</button>
+                    <button class="danger" onclick={(e) => { e.stopPropagation(); deleteTask(task.id); }}>Delete</button>
+                    <button class="ghost" onclick={(e) => { e.stopPropagation(); toggleHistory(task.id); }}>{expandedHistory[task.id] ? 'Hide history' : 'History'}</button>
                   </div>
+                  {#if expandedHistory[task.id]}
+                    {#if historyLoading[task.id]}
+                      <div class="timeline loading">Loading history…</div>
+                    {:else if historyByTask[task.id]?.length}
+                      <ul class="timeline">
+                        {#each historyByTask[task.id] as a (a.id)}
+                          <li class="timeline-item">
+                            <span class="from">{a.fromStatus ?? '∅'}</span>
+                            <span class="arrow">→</span>
+                            <span class="to">{a.toStatus}</span>
+                            {#if a.agentId}<span class="chip small">{a.agentId}</span>{/if}
+                            <span class="time">{fmtTime(a.changedAt)}</span>
+                            {#if a.note}<span class="note">{a.note}</span>{/if}
+                          </li>
+                        {/each}
+                      </ul>
+                    {:else}
+                      <div class="timeline empty-tl">No history yet</div>
+                    {/if}
+                  {/if}
                 {/if}
               </article>
             {/each}
@@ -262,5 +349,16 @@
   .card-actions button { font-size: 11px; padding: 3px 6px; }
   .card input, .card textarea { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; margin-top: 6px; font-family: inherit; }
   .card textarea { min-height: 88px; resize: vertical; line-height: 1.5; }
+  .chip.lock { background: #fef3c7; color: #92400e; border-color: #fbbf24; }
+  .chip.unlock { background: #f1f5f9; color: #64748b; border-color: #cbd5e1; }
+  .chip.small { font-size: 10px; padding: 0 5px; }
+  button.ghost { background: #f8fafc; border-color: #e2e8f0; color: #334155; }
+  .timeline { margin: 8px 0 0; padding: 6px 0 0 0; list-style: none; border-top: 1px dashed #e2e8f0; font-size: 12px; }
+  .timeline.loading, .timeline.empty-tl { color: #94a3b8; font-size: 12px; padding: 6px 0; border-top: 1px dashed #e2e8f0; margin-top: 8px; }
+  .timeline-item { display: flex; gap: 6px; align-items: center; padding: 3px 0; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap; }
+  .timeline-item .from, .timeline-item .to { font-weight: 600; font-size: 11px; padding: 1px 5px; border-radius: 999px; background: #f1f5f9; border: 1px solid #e2e8f0; }
+  .timeline-item .to { background: #e0e7ff; border-color: #c7d2fe; color: #3730a3; }
+  .timeline-item .arrow { color: #64748b; }
+  .timeline-item .note { color: #64748b; font-style: italic; }
   .empty, .empty-col { color: #94a3b8; font-size: 13px; }
 </style>

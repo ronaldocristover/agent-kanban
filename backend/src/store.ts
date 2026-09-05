@@ -1,5 +1,5 @@
-import type { Database } from 'bun:sqlite';
 import { nanoid } from 'nanoid';
+import type { Db } from './db.ts';
 
 export type Status = 'todo' | 'in_progress' | 'done';
 export const STATUSES: readonly Status[] = ['todo', 'in_progress', 'done'] as const;
@@ -23,8 +23,19 @@ export type Task = {
   description: string | null;
   status: Status;
   agentId: string | null;
+  lockedAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type TaskAudit = {
+  id: number;
+  taskId: string;
+  fromStatus: Status | null;
+  toStatus: Status;
+  agentId: string | null;
+  changedAt: string;
+  note: string | null;
 };
 
 type ProjectRow = {
@@ -42,8 +53,19 @@ type TaskRow = {
   description: string | null;
   status: Status;
   agent_id: string | null;
+  locked_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type AuditRow = {
+  id: number;
+  task_id: string;
+  from_status: Status | null;
+  to_status: Status;
+  agent_id: string | null;
+  changed_at: string;
+  note: string | null;
 };
 
 const now = () => new Date().toISOString();
@@ -60,17 +82,42 @@ function toTask(r: TaskRow): Task {
     description: r.description,
     status: r.status,
     agentId: r.agent_id,
+    lockedAt: r.locked_at ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
+function toAudit(r: AuditRow): TaskAudit {
+  return {
+    id: r.id,
+    taskId: r.task_id,
+    fromStatus: r.from_status,
+    toStatus: r.to_status,
+    agentId: r.agent_id,
+    changedAt: r.changed_at,
+    note: r.note,
+  };
+}
+
+async function addAudit(db: Db, taskId: string, fromStatus: Status | null, toStatus: Status, agentId: string | null, note?: string | null): Promise<void> {
+  const t = now();
+  await db.run('INSERT INTO task_audits (task_id, from_status, to_status, agent_id, changed_at, note) VALUES (?, ?, ?, ?, ?, ?)', [
+    taskId,
+    fromStatus,
+    toStatus,
+    agentId,
+    t,
+    note ?? null,
+  ]);
+}
+
 // Projects
 
-export function createProject(db: Database, input: { name: string; description?: string | null }): Project {
+export async function createProject(db: Db, input: { name: string; description?: string | null }): Promise<Project> {
   const t = now();
   const id = nanoid(12);
-  db.run('INSERT INTO projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', [
+  await db.run('INSERT INTO projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', [
     id,
     input.name,
     input.description ?? null,
@@ -80,85 +127,89 @@ export function createProject(db: Database, input: { name: string; description?:
   return { id, name: input.name, description: input.description ?? null, createdAt: t, updatedAt: t };
 }
 
-export function getProject(db: Database, id: string): Project | undefined {
-  const row = db.query<ProjectRow, [string]>('SELECT * FROM projects WHERE id = ?').get(id);
+export async function getProject(db: Db, id: string): Promise<Project | undefined> {
+  const row = await db.queryOne<ProjectRow>('SELECT * FROM projects WHERE id = ?', [id]);
   return row ? toProject(row) : undefined;
 }
 
-export function getTaskCounts(db: Database, projectId: string): TaskCounts {
-  const rows = db
-    .query<{ status: Status; n: number }, [string]>(
-      'SELECT status, COUNT(*) AS n FROM tasks WHERE project_id = ? GROUP BY status',
-    )
-    .all(projectId);
+export async function getTaskCounts(db: Db, projectId: string): Promise<TaskCounts> {
+  const rows = await db.query<{ status: Status; n: number }>('SELECT status, COUNT(*) AS n FROM tasks WHERE project_id = ? GROUP BY status', [projectId]);
   const counts: TaskCounts = { todo: 0, in_progress: 0, done: 0, total: 0 };
   for (const r of rows) {
-    counts[r.status] = r.n;
-    counts.total += r.n;
+    counts[r.status] = Number(r.n);
+    counts.total += Number(r.n);
   }
   return counts;
 }
 
-export function listProjects(db: Database): ProjectWithCounts[] {
-  const rows = db.query<ProjectRow, []>('SELECT * FROM projects ORDER BY created_at ASC').all();
-  return rows.map((r) => ({ ...toProject(r), taskCounts: getTaskCounts(db, r.id) }));
+export async function listProjects(db: Db): Promise<ProjectWithCounts[]> {
+  const rows = await db.query<ProjectRow>('SELECT * FROM projects ORDER BY created_at ASC');
+  const result: ProjectWithCounts[] = [];
+  for (const r of rows) {
+    result.push({ ...toProject(r), taskCounts: await getTaskCounts(db, r.id) });
+  }
+  return result;
 }
 
-export function updateProject(
-  db: Database,
+export async function updateProject(
+  db: Db,
   id: string,
   patch: { name?: string; description?: string | null },
-): Project | undefined {
-  const existing = getProject(db, id);
+): Promise<Project | undefined> {
+  const existing = await getProject(db, id);
   if (!existing) return undefined;
   const name = patch.name ?? existing.name;
   const description = patch.description !== undefined ? patch.description : existing.description;
   const t = now();
-  db.run('UPDATE projects SET name = ?, description = ?, updated_at = ? WHERE id = ?', [name, description, t, id]);
+  await db.run('UPDATE projects SET name = ?, description = ?, updated_at = ? WHERE id = ?', [name, description, t, id]);
   return { ...existing, name, description, updatedAt: t };
 }
 
-export function deleteProject(db: Database, id: string): boolean {
-  const res = db.run('DELETE FROM projects WHERE id = ?', [id]);
+export async function deleteProject(db: Db, id: string): Promise<boolean> {
+  const res = await db.run('DELETE FROM projects WHERE id = ?', [id]);
   return res.changes > 0;
 }
 
 // Tasks
 
-export function createTask(
-  db: Database,
+export async function createTask(
+  db: Db,
   input: { projectId: string; title: string; description?: string | null; status?: Status; agentId?: string | null },
-): Task | undefined {
-  const project = getProject(db, input.projectId);
+): Promise<Task | undefined> {
+  const project = await getProject(db, input.projectId);
   if (!project) return undefined;
   const t = now();
   const id = nanoid(12);
   const status: Status = input.status ?? 'todo';
-  db.run(
-    'INSERT INTO tasks (id, project_id, title, description, status, agent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, input.projectId, input.title, input.description ?? null, status, input.agentId ?? null, t, t],
+  const lockedAt = input.agentId ? t : null;
+  await db.run(
+    'INSERT INTO tasks (id, project_id, title, description, status, agent_id, locked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, input.projectId, input.title, input.description ?? null, status, input.agentId ?? null, lockedAt, t, t],
   );
-  return {
+  const task: Task = {
     id,
     projectId: input.projectId,
     title: input.title,
     description: input.description ?? null,
     status,
     agentId: input.agentId ?? null,
+    lockedAt,
     createdAt: t,
     updatedAt: t,
   };
+  await addAudit(db, id, null, status, task.agentId);
+  return task;
 }
 
-export function getTask(db: Database, id: string): Task | undefined {
-  const row = db.query<TaskRow, [string]>('SELECT * FROM tasks WHERE id = ?').get(id);
+export async function getTask(db: Db, id: string): Promise<Task | undefined> {
+  const row = await db.queryOne<TaskRow>('SELECT * FROM tasks WHERE id = ?', [id]);
   return row ? toTask(row) : undefined;
 }
 
-export function listTasks(
-  db: Database,
+export async function listTasks(
+  db: Db,
   filters: { projectId?: string; status?: string; agentId?: string },
-): Task[] {
+): Promise<Task[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (filters.projectId) {
@@ -174,35 +225,105 @@ export function listTasks(
     params.push(filters.agentId);
   }
   const sql = `SELECT * FROM tasks${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at ASC`;
-  // bun:sqlite typing: spread params
-  const rows = (db.query<TaskRow, any>(sql) as any).all(...params);
-  return (rows as TaskRow[]).map(toTask);
+  const rows = await db.query<TaskRow>(sql, params);
+  return rows.map(toTask);
 }
 
-export function updateTask(
-  db: Database,
+export class ConflictError extends Error {
+  code = 'CONFLICT';
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConflictError';
+  }
+}
+
+export async function updateTask(
+  db: Db,
   id: string,
   patch: { title?: string; description?: string | null; status?: Status; agentId?: string | null },
-): Task | undefined {
-  const existing = getTask(db, id);
+): Promise<Task | undefined> {
+  const existing = await getTask(db, id);
   if (!existing) return undefined;
+
+  // Locking: if trying to claim (set agent_id to non-null) and task already locked by another agent, conflict
+  if (patch.agentId !== undefined && patch.agentId !== null) {
+    if (existing.agentId !== null && existing.agentId !== patch.agentId) {
+      throw new ConflictError(`task already locked by ${existing.agentId}`);
+    }
+  }
+
   const title = patch.title ?? existing.title;
   const description = patch.description !== undefined ? patch.description : existing.description;
   const status = patch.status ?? existing.status;
   const agentId = patch.agentId !== undefined ? patch.agentId : existing.agentId;
+
+  // Determine locked_at
+  let lockedAt: string | null = existing.lockedAt;
+  if (patch.agentId !== undefined) {
+    if (patch.agentId === null) lockedAt = null;
+    else if (patch.agentId !== existing.agentId) lockedAt = now();
+    // if same agent, keep existing lockedAt
+  }
+
   const t = now();
-  db.run('UPDATE tasks SET title = ?, description = ?, status = ?, agent_id = ?, updated_at = ? WHERE id = ?', [
-    title,
-    description,
-    status,
-    agentId,
-    t,
-    id,
-  ]);
-  return { ...existing, title, description, status, agentId, updatedAt: t };
+
+  // Atomic update for locking case: if claiming, use conditional WHERE to prevent race
+  if (patch.agentId !== undefined && patch.agentId !== null && existing.agentId === null) {
+    // Claim: only succeed if still unlocked
+    const res = await db.run(
+      'UPDATE tasks SET title = ?, description = ?, status = ?, agent_id = ?, locked_at = ?, updated_at = ? WHERE id = ? AND agent_id IS NULL',
+      [title, description, status, agentId, lockedAt, t, id],
+    );
+    if (res.changes === 0) {
+      // Someone else claimed in the meantime — re-read to give accurate error
+      const current = await getTask(db, id);
+      throw new ConflictError(`task already locked by ${current?.agentId ?? 'another agent'}`);
+    }
+  } else if (patch.agentId !== undefined && patch.agentId !== null && existing.agentId !== null && patch.agentId !== existing.agentId) {
+    // Already handled above, but keep for safety (should have thrown)
+    throw new ConflictError(`task already locked by ${existing.agentId}`);
+  } else {
+    await db.run('UPDATE tasks SET title = ?, description = ?, status = ?, agent_id = ?, locked_at = ?, updated_at = ? WHERE id = ?', [
+      title,
+      description,
+      status,
+      agentId,
+      lockedAt,
+      t,
+      id,
+    ]);
+  }
+
+  // Audit: if status changed, record
+  if (status !== existing.status) {
+    await addAudit(db, id, existing.status, status, agentId);
+  }
+
+  return { ...existing, title, description, status, agentId, lockedAt, updatedAt: t };
 }
 
-export function deleteTask(db: Database, id: string): boolean {
-  const res = db.run('DELETE FROM tasks WHERE id = ?', [id]);
+export async function deleteTask(db: Db, id: string): Promise<boolean> {
+  const res = await db.run('DELETE FROM tasks WHERE id = ?', [id]);
   return res.changes > 0;
+}
+
+export async function getTaskHistory(db: Db, taskId: string): Promise<TaskAudit[]> {
+  const rows = await db.query<AuditRow>('SELECT * FROM task_audits WHERE task_id = ? ORDER BY changed_at ASC, id ASC', [taskId]);
+  return rows.map(toAudit);
+}
+
+export async function listAudits(db: Db, filters: { taskId?: string; projectId?: string }): Promise<TaskAudit[]> {
+  if (filters.projectId && !filters.taskId) {
+    // Join to filter by project
+    const rows = await db.query<AuditRow>(
+      'SELECT a.* FROM task_audits a JOIN tasks t ON a.task_id = t.id WHERE t.project_id = ? ORDER BY a.changed_at ASC, a.id ASC',
+      [filters.projectId],
+    );
+    return rows.map(toAudit);
+  }
+  if (filters.taskId) {
+    return getTaskHistory(db, filters.taskId);
+  }
+  const rows = await db.query<AuditRow>('SELECT * FROM task_audits ORDER BY changed_at ASC, id ASC LIMIT 500');
+  return rows.map(toAudit);
 }

@@ -9,13 +9,13 @@ const HOST = process.env.HOST ?? '127.0.0.1';
 const DB_PATH = process.env.KANBAN_DB ?? defaultDbPath();
 const STATIC_DIR = process.env.STATIC_DIR ?? path.resolve(import.meta.dir, '../../web/build');
 
-const db = openDb(DB_PATH);
+const db = await openDb(DB_PATH);
 const bus = new EventBus(db);
 
 const app = createApp({ db, bus }, { staticDir: STATIC_DIR });
 
 app.listen({ port: PORT, hostname: HOST }, ({ hostname, port }) => {
-  console.log(`agent-kanban backend (Elysia) listening on http://${hostname}:${port} (db: ${DB_PATH})`);
+  console.log(`agent-kanban backend (Elysia + ${db.type}) listening on http://${hostname}:${port} (db: ${db.type === 'mysql' ? `${process.env.MYSQL_HOST ?? 'db'}:${process.env.MYSQL_PORT ?? 3306}/${process.env.MYSQL_DATABASE ?? 'kanban'}` : DB_PATH})`);
   if (existsSync(STATIC_DIR)) console.log(`serving static from ${STATIC_DIR}`);
 });
 

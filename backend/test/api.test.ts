@@ -1,13 +1,14 @@
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { openDb } from '../src/db.ts';
 import { EventBus } from '../src/events.ts';
-import { handleApi } from '../src/routes.ts';
+import { createApp } from '../src/app.ts';
 
-function makeApp() {
-  const db = openDb(':memory:');
+async function makeApp() {
+  const db = await openDb(':memory:');
   const bus = new EventBus(db);
-  const fetch = (req: Request) => handleApi(req, { db, bus }).then((r) => r ?? new Response('not found', { status: 404 }));
-  return { db, bus, fetch };
+  const app = createApp({ db, bus });
+  const fetch = (req: Request) => app.handle(req);
+  return { db, bus, fetch, app };
 }
 
 async function json(req: Request, appFetch: (r: Request) => Promise<Response>) {
@@ -19,7 +20,7 @@ async function json(req: Request, appFetch: (r: Request) => Promise<Response>) {
 
 describe('api', () => {
   it('projects CRUD + validation', async () => {
-    const { fetch: appFetch } = makeApp();
+    const { fetch: appFetch, db } = await makeApp();
     // POST without name -> 400
     let r = await json(new Request('http://test/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) }), appFetch);
     expect(r.res.status).toBe(400);
@@ -44,10 +45,11 @@ describe('api', () => {
     expect(res.status).toBe(204);
     r = await json(new Request(`http://test/api/projects/${id}`), appFetch);
     expect(r.res.status).toBe(404);
+    await db.close();
   });
 
   it('tasks CRUD, filters, and validation', async () => {
-    const { fetch: appFetch } = makeApp();
+    const { fetch: appFetch, db } = await makeApp();
     const pr = await json(new Request('http://test/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Proj' }) }), appFetch);
     const pid = pr.body.id as string;
 
@@ -55,11 +57,12 @@ describe('api', () => {
     let r = await json(new Request('http://test/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project_id: 'nope', title: 'x' }) }), appFetch);
     expect(r.res.status).toBe(404);
 
-    // create two tasks
-    r = await json(new Request('http://test/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project_id: pid, title: 't1', agent_id: 'a1' }) }), appFetch);
+    // create two tasks (first unlocked, second done)
+    r = await json(new Request('http://test/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project_id: pid, title: 't1' }) }), appFetch);
     expect(r.res.status).toBe(201);
     const tid = r.body.id as string;
     expect(r.body.status).toBe('todo');
+    expect(r.body.lockedAt).toBeNull();
 
     await json(new Request('http://test/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project_id: pid, title: 't2', status: 'done' }) }), appFetch);
 
@@ -87,19 +90,21 @@ describe('api', () => {
     expect(r.res.status).toBe(200);
     expect(r.body.status).toBe('in_progress');
     expect(r.body.agentId).toBe('bob');
+    await db.close();
   });
 
   it('events emitted for SSE replay', async () => {
-    const { bus } = makeApp();
-    bus.emit('project.created', { id: 'x' });
-    const replayed = bus.replayAfter(0);
+    const { bus, db } = await makeApp();
+    await bus.emit('project.created', { id: 'x' });
+    const replayed = await bus.replayAfter(0);
     expect(replayed.length).toBeGreaterThan(0);
     expect(replayed[0].type).toBe('project.created');
     // subscribe
     let seen: unknown = null;
     const unsub = bus.subscribe((e) => (seen = e.type));
-    bus.emit('task.created', { id: 't' });
+    await bus.emit('task.created', { id: 't' });
     expect(seen).toBe('task.created');
     unsub();
+    await db.close();
   });
 });

@@ -19,8 +19,19 @@ export type Task = {
   description: string | null;
   status: Status;
   agentId: string | null;
+  lockedAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type TaskAudit = {
+  id: number;
+  taskId: string;
+  fromStatus: Status | null;
+  toStatus: Status;
+  agentId: string | null;
+  changedAt: string;
+  note: string | null;
 };
 
 export type KanbanEvent = { id: number; type: string; payload: unknown; createdAt: string };
