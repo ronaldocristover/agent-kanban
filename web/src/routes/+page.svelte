@@ -177,7 +177,7 @@
         { key: 'in_progress', label: 'In Progress', tasks: inProgressTasks },
         { key: 'done', label: 'Done', tasks: doneTasks }
       ] as col}
-        <section class="column">
+        <section class="column {col.key}">
           <h2>{col.label} <span class="badge">{col.tasks.length}</span></h2>
           <div class="new-task">
             <input placeholder="New task title" bind:value={newTaskTitle[col.key]} onkeydown={(e) => e.key==='Enter' && createTask(col.key as any)} />
@@ -244,7 +244,19 @@
   @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
   .column { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; min-height: 240px; }
   .column h2 { margin: 0 0 10px; font-size: 14px; display: flex; gap: 6px; align-items: center; }
+  .column.todo h2 { color: #64748b; }
+  .column.in_progress h2 { color: #c2410c; }
+  .column.done h2 { color: #15803d; }
+  .column.todo { border-top: 4px solid #94a3b8; }
+  .column.in_progress { border-top: 4px solid #f97316; }
+  .column.done { border-top: 4px solid #22c55e; }
   .badge { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 999px; padding: 0 6px; font-size: 11px; }
+  .column.todo .badge { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+  .column.in_progress .badge { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+  .column.done .badge { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
+  .column.todo .card { border-left: 3px solid #cbd5e1; }
+  .column.in_progress .card { border-left: 3px solid #fb923c; }
+  .column.done .card { border-left: 3px solid #4ade80; }
   .new-task { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
   .new-task input { padding: 6px 8px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; }
   .cards { display: flex; flex-direction: column; gap: 8px; }
