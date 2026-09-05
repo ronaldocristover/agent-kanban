@@ -126,7 +126,33 @@ Single SvelteKit page (client-rendered on top of prerendered shell):
 - Realtime via `EventSource('/api/events')` + refetch on event; browser auto-reconnects, server replays missed events.
 - Styling: minimal custom CSS; no component library.
 
-## Repository layout
+## Agent skills & usage docs
+
+The repo ships a canonical skill that teaches any agent how to connect to and work through the kanban, distributed in each host's native skill format.
+
+**Single source of truth:** `skills/agent-kanban/SKILL.md` (SKILL.md format: YAML frontmatter with `name` + `description`, then markdown body). Distributed copies live at:
+
+- `.claude/skills/agent-kanban/SKILL.md` — Claude Code
+- `.opencode/skills/agent-kanban/SKILL.md` — opencode
+- `skills/hermes/agent-kanban/SKILL.md` — hermes (same format; copied into the hermes skills dir per its config)
+
+Copies are kept in sync by `backend/scripts/sync-skills.sh` (cp from canonical); a bun test asserts the copies are byte-identical to the canonical file to catch drift.
+
+**Skill content (full conventions):**
+
+1. *Connection* — health check (`GET /api/projects`), env `BACKEND_URL`; prefer MCP tools; REST fallback table with `curl` examples for all 8 operations + SSE note.
+2. *MCP setup snippets* — per host: Claude Code (`.mcp.json` / `claude mcp add`), opencode (`mcp` block in opencode.json, local stdio type), hermes (stdio MCP JSON snippet). Formats verified against current host docs during implementation.
+3. *Workflow rules* —
+   - Claim before work: `update_task(id, { agent_id: <your-id>, status: 'in_progress' })`; agent id convention `<host>-<role>` e.g. `opencode-main`, `hermes-worker-1`.
+   - Keep status truthful while working; `done` only when acceptance criteria in the description are met.
+   - Blocked: append a note to `description` (timestamped), leave status as-is or hand back by clearing `agent_id`.
+4. *Task conventions* — one task = one PR-sized unit; imperative title; description carries context + acceptance criteria so another agent can pick it up cold; agents create tasks for discovered work instead of silently fixing.
+5. *Commit etiquette* — reference the task id in the commit message body (`Kanban-Task: <id>`); mark the task `done` only after the commit lands.
+6. *Error handling* — 404 → re-list before retrying (task may be deleted); never blind-retry mutations.
+
+**Discovery:** root `AGENTS.md` points every agent working in this repo at the skill; README has a human-facing "Using agents with the board" section linking the same doc.
+
+
 
 ```
 agent-kanban/
@@ -138,11 +164,20 @@ agent-kanban/
       store.ts        # data access functions
       routes.ts       # REST handlers
       events.ts       # event bus + SSE registry
+    scripts/
+      sync-skills.sh  # copy canonical skill to the 3 host locations
     test/
     package.json
   web/
     src/routes/...
     package.json      # sveltekit, adapter-static
+  skills/
+    agent-kanban/SKILL.md      # canonical skill (single source of truth)
+    hermes/agent-kanban/SKILL.md
+  .claude/skills/agent-kanban/SKILL.md
+  .opencode/skills/agent-kanban/SKILL.md
+  AGENTS.md           # points agents at the kanban skill
+  README.md
   docs/superpowers/specs/
   package.json        # root: workspaces, scripts (dev, build, test)
   opencode.json       # existing config (unchanged)
@@ -161,6 +196,7 @@ Root scripts: `dev` (backend + web concurrently), `build`, `start` (production b
 - **Store unit tests** (bun test, in-memory SQLite): CRUD, filters, cascade delete, validation at store level.
 - **HTTP integration tests** (bun test): spin up the server on a random port, drive CRUD flows with `fetch`; assert status codes, payloads, 400/404 paths, and that mutations emit SSE events (capture via a test client).
 - **MCP tests**: mock `fetch`; assert each tool hits the right endpoint with the right body and maps errors; one smoke integration test against the real server.
+- **Skill sync test**: assert the three distributed SKILL.md copies are byte-identical to `skills/agent-kanban/SKILL.md`.
 - **Verification**: `bun test` (all packages), biome lint + typecheck, `bun run build` for web, manual SSE check in dev.
 
 ## Future (out of scope)
