@@ -181,7 +181,7 @@
           <h2>{col.label} <span class="badge">{col.tasks.length}</span></h2>
           <div class="new-task">
             <input placeholder="New task title" bind:value={newTaskTitle[col.key]} onkeydown={(e) => e.key==='Enter' && createTask(col.key as any)} />
-            <input placeholder="Description (optional)" bind:value={newTaskDesc[col.key]} onkeydown={(e) => e.key==='Enter' && createTask(col.key as any)} />
+            <textarea rows="3" placeholder="Description (optional)" bind:value={newTaskDesc[col.key]}></textarea>
             <button onclick={() => createTask(col.key as any)} disabled={!newTaskTitle[col.key].trim()}>Add</button>
           </div>
           <div class="cards">
@@ -189,7 +189,7 @@
               <article class="card">
                 {#if editingId === task.id}
                   <input bind:value={editTitle} />
-                  <textarea rows="2" bind:value={editDesc} placeholder="Description"></textarea>
+                  <textarea rows="4" bind:value={editDesc} placeholder="Description"></textarea>
                   <input bind:value={editAgent} placeholder="agent_id" />
                   <div class="card-actions">
                     <button onclick={saveEdit}>Save</button>
@@ -249,16 +249,18 @@
   .column.done h2 { color: #16a34a; }
   .badge { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 999px; padding: 0 6px; font-size: 11px; }
   .new-task { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-  .new-task input { padding: 6px 8px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; }
+  .new-task input, .new-task textarea { padding: 6px 8px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; font-family: inherit; resize: vertical; }
+  .new-task textarea { min-height: 64px; }
   .cards { display: flex; flex-direction: column; gap: 8px; }
   .card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; background: #fff; }
   .card-title { font-weight: 600; font-size: 13px; }
-  .card-desc { font-size: 12px; color: #475569; margin-top: 4px; white-space: pre-wrap; }
+  .card-desc { font-size: 13px; color: #334155; margin-top: 6px; white-space: pre-wrap; line-height: 1.5; max-height: 160px; overflow-y: auto; padding: 6px 8px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 6px; }
   .card-meta { display: flex; gap: 6px; align-items: center; margin-top: 6px; font-size: 11px; color: #64748b; }
   .chip { background: #e0e7ff; color: #3730a3; padding: 1px 6px; border-radius: 999px; border: 1px solid #c7d2fe; }
   .time { margin-left: auto; }
   .card-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
   .card-actions button { font-size: 11px; padding: 3px 6px; }
-  .card input, .card textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; margin-top: 6px; }
+  .card input, .card textarea { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; margin-top: 6px; font-family: inherit; }
+  .card textarea { min-height: 88px; resize: vertical; line-height: 1.5; }
   .empty, .empty-col { color: #94a3b8; font-size: 13px; }
 </style>
