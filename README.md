@@ -60,6 +60,10 @@ bun --cwd backend run start
 
 # health check
 curl -sf http://127.0.0.1:3000/api/projects | python3 -m json.tool
+
+# seed sample data (3 projects, 16 tasks)
+make seed          # skips if DB already has data
+make seed-reset    # wipe + reseed
 ```
 
 ### Docker

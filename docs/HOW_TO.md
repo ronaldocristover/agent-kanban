@@ -49,6 +49,19 @@ docker compose down
 docker build -t agent-kanban . && docker run -p 3000:3000 -v ./data:/app/data agent-kanban
 ```
 
+### Seed
+
+```bash
+make seed        # 3 projects (Agent Kanban, Demo Board, Backlog) + 16 tasks; skips if DB already seeded
+make seed-reset  # wipe projects/tasks/events and reseed
+# or
+bun --cwd backend run seed
+bun --cwd backend run seed -- --reset
+KANBAN_DB=/tmp/demo.db bun --cwd backend run seed
+```
+
+Seed respects `KANBAN_DB`; with `:memory:` it is ephemeral.
+
 ### Health check
 
 ```bash

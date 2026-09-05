@@ -1,4 +1,4 @@
-.PHONY: install dev build start test typecheck lint clean mcp sync-skills
+.PHONY: install dev build start seed seed-reset test typecheck lint clean mcp sync-skills
 
 install:
 	bun install
@@ -25,6 +25,12 @@ lint:
 
 clean:
 	rm -rf web/build web/.svelte-kit backend/dist data/*.db
+
+seed:
+	bun --cwd backend run seed
+
+seed-reset:
+	bun --cwd backend run seed:reset
 
 mcp:
 	BACKEND_URL=http://127.0.0.1:3000 bun --cwd backend run mcp

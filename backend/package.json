@@ -6,6 +6,8 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "mcp": "bun src/mcp.ts",
+    "seed": "bun src/seed.ts",
+    "seed:reset": "bun src/seed.ts --reset",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
