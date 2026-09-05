@@ -23,6 +23,17 @@ Initial release. Implements `docs/superpowers/specs/2026-09-05-agent-kanban-desi
 - No auth; binds localhost. Production via `make build && make start` or `docker compose up --build`.
 - `opencode.json` remains gitignored (contains secrets); MCP snippet is documented in the skill.
 
+## [0.2.0] — 2026-09-05
+
+### Added
+
+- **Seed** (`backend/src/seed.ts`, `make seed` / `make seed-reset`): 3 projects (Agent Kanban, Demo Board, Backlog) + 16 tasks across `todo`/`in_progress`/`done` with `agent_id` examples. Idempotent (skips if DB has data); `--reset` wipes and reseeds; respects `KANBAN_DB`; emits SSE events.
+- **Hermes installer** (`backend/scripts/copy-to-hermes.sh`, `make install-hermes`): copies canonical `SKILL.md` to Hermes skills dir. Resolves dest via arg → `HERMES_SKILLS_DIR` → `HERMES_DIR/skills` → `~/.hermes/skills` → `~/.config/hermes/skills`; verifies byte-identical.
+
+### Changed
+
+- `README.md` / `docs/HOW_TO.md`: document `make seed` / `make install-hermes` and script usage; repo layout now lists `seed.ts` + `copy-to-hermes.sh`.
+
 ## [Unreleased]
 
-- Planned (out of scope for 0.1.0): task ordering/drag, priority/labels, auth, remote MCP transport.
+- Planned (out of scope for 0.1.x): task ordering/drag, priority/labels, auth, remote MCP transport.

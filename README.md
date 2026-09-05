@@ -123,7 +123,7 @@ BACKEND_URL=http://127.0.0.1:3000 bun --cwd backend run mcp
 
 - **Claude Code** — `.mcp.json` already committed. Or `claude mcp add agent-kanban -- bun --cwd backend run mcp`.
 - **opencode** — copy `mcp` block from `skills/agent-kanban/SKILL.md` into `opencode.json` (`type: local`).
-- **Hermes** — copy `skills/hermes/agent-kanban/SKILL.md` into your hermes skills dir.
+- **Hermes** — `backend/scripts/copy-to-hermes.sh` (or `make install-hermes`) copies the skill to `~/.hermes/skills`; see `docs/HOW_TO.md` §6.
 
 8 tools: `list_projects`, `create_project`, `update_project`, `delete_project`, `list_tasks`, `create_task`, `update_task`, `delete_task`.
 
@@ -142,8 +142,10 @@ backend/                 Bun + bun:sqlite + SSE + serves web/build
   src/routes.ts          REST handlers
   src/index.ts           Bun.serve + SSE + static
   src/mcp.ts             stdio MCP server (8 tools)
+  src/seed.ts            seed 3 projects + 16 tasks (make seed)
   test/                  bun:test (store/api/mcp/skills-sync)
   scripts/sync-skills.sh keep 3 skill copies in sync
+  scripts/copy-to-hermes.sh copy canonical skill to Hermes dir
 web/                     SvelteKit + adapter-static
   src/lib/types.ts, api.ts
   src/routes/+page.svelte board
@@ -154,6 +156,7 @@ skills/hermes/agent-kanban/SKILL.md
 docs/superpowers/specs/  design spec
 docs/HOW_TO.md           cookbook (curl, MCP, docker, troubleshooting)
 docs/CHANGES.md          changelog
+Makefile / Dockerfile / docker-compose.yml  one-command run
 ```
 
 ## Tests & quality
