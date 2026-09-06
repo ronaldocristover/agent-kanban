@@ -69,16 +69,16 @@ export const api = {
 
 export function subscribeEvents(handlers: {
   onEvent: (e: KanbanEvent) => void;
-  onStatus: (s: 'open' | 'connecting' | 'error') => void;
+  onStatus: (s: 'open' | 'connecting' | 'error', detail?: string) => void;
 }): () => void {
   let es: EventSource | null = null;
   let closed = false;
 
   const connect = () => {
     if (closed) return;
-    handlers.onStatus('connecting');
+    handlers.onStatus('connecting', `connecting to ${location.origin}/api/events`);
     es = new EventSource('/api/events');
-    es.onopen = () => handlers.onStatus('open');
+    es.onopen = () => handlers.onStatus('open', `connected readyState=${es?.readyState}`);
     es.onmessage = (m) => {
       try {
         const data = JSON.parse(m.data) as KanbanEvent;
@@ -86,7 +86,7 @@ export function subscribeEvents(handlers: {
       } catch {}
     };
     es.onerror = () => {
-      handlers.onStatus('error');
+      handlers.onStatus('error', `error readyState=${es?.readyState} networkType=${navigator.onLine ? 'online' : 'offline'}`);
       es?.close();
       setTimeout(connect, 1500);
     };

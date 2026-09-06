@@ -7,6 +7,7 @@
   let selectedId = $state<string | null>(null);
   let tasks = $state<Task[]>([]);
   let connection = $state<'open' | 'connecting' | 'error'>('connecting');
+  let connDetail = $state('');
   let error = $state<string | null>(null);
 
   // forms
@@ -160,7 +161,7 @@
   onMount(() => {
     refreshProjects().then(refreshTasks);
     const close = subscribeEvents({
-      onStatus: (s) => (connection = s),
+      onStatus: (s, detail) => { connection = s; connDetail = detail ?? ''; },
       onEvent: async () => {
         await refreshProjects();
         await refreshTasks();
@@ -179,6 +180,7 @@
     <h1>Agent Kanban</h1>
     <div class="conn" class:ok={connection==='open'} class:bad={connection!=='open'}>
       {connection === 'open' ? '● live' : connection === 'connecting' ? '○ connecting' : '○ reconnecting'}
+      <span style="font-size:10px;color:#94a3b8;margin-left:6px">{connDetail}</span>
     </div>
   </header>
 
