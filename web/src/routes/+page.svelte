@@ -13,8 +13,8 @@
   // forms
   let newProjectName = $state('');
   let newProjectDesc = $state('');
-  let newTaskTitle: Record<string, string> = $state({ todo: '', in_progress: '', done: '' });
-  let newTaskDesc: Record<string, string> = $state({ todo: '', in_progress: '', done: '' });
+  let newTaskTitle: Record<string, string> = $state({ todo: '', in_progress: '', done: '', rejected: '' });
+  let newTaskDesc: Record<string, string> = $state({ todo: '', in_progress: '', done: '', rejected: '' });
   let editingId = $state<string | null>(null);
   let editTitle = $state('');
   let editDesc = $state('');
@@ -29,6 +29,7 @@
   const todoTasks = $derived(tasks.filter((t) => t.status === 'todo'));
   const inProgressTasks = $derived(tasks.filter((t) => t.status === 'in_progress'));
   const doneTasks = $derived(tasks.filter((t) => t.status === 'done'));
+  const rejectedTasks = $derived(tasks.filter((t) => t.status === 'rejected'));
 
   async function refreshProjects() {
     try {
@@ -76,7 +77,7 @@
     } catch (e) { error = (e as Error).message; }
   }
 
-  async function createTask(status: 'todo' | 'in_progress' | 'done') {
+  async function createTask(status: 'todo' | 'in_progress' | 'done' | 'rejected') {
     if (!selectedId || !newTaskTitle[status].trim()) return;
     try {
       await api.createTask({ project_id: selectedId, title: newTaskTitle[status].trim(), description: newTaskDesc[status].trim() || undefined, status });
@@ -99,7 +100,7 @@
     }
   }
 
-  async function moveTask(task: Task, to: 'todo' | 'in_progress' | 'done') {
+  async function moveTask(task: Task, to: 'todo' | 'in_progress' | 'done' | 'rejected') {
     try {
       await api.updateTask(task.id, { status: to });
       await refreshTasks(); await refreshProjects();
@@ -201,7 +202,7 @@
         {/if}
       </select>
       {#if selected}
-        <span class="counts">todo {selected.taskCounts.todo} · in_progress {selected.taskCounts.in_progress} · done {selected.taskCounts.done}</span>
+        <span class="counts">todo {selected.taskCounts.todo} · in_progress {selected.taskCounts.in_progress} · done {selected.taskCounts.done} · rejected {selected.taskCounts.rejected}</span>
         <button class="danger" onclick={() => deleteProject(selected.id)}>Delete project</button>
       {/if}
     </div>
@@ -219,7 +220,8 @@
       {#each [
         { key: 'todo', label: 'Todo', tasks: todoTasks },
         { key: 'in_progress', label: 'In Progress', tasks: inProgressTasks },
-        { key: 'done', label: 'Done', tasks: doneTasks }
+        { key: 'done', label: 'Done', tasks: doneTasks },
+        { key: 'rejected', label: 'Rejected', tasks: rejectedTasks }
       ] as col}
         <section class="column {col.key}">
           <h2>{col.label} <span class="badge">{col.tasks.length}</span></h2>
@@ -276,6 +278,7 @@
                     {#if task.status !== 'todo'}<button onclick={(e) => { e.stopPropagation(); moveTask(task, 'todo'); }}>← Todo</button>{/if}
                     {#if task.status !== 'in_progress'}<button onclick={(e) => { e.stopPropagation(); moveTask(task, 'in_progress'); }}>→ Progress</button>{/if}
                     {#if task.status !== 'done'}<button onclick={(e) => { e.stopPropagation(); moveTask(task, 'done'); }}>✓ Done</button>{/if}
+                    {#if task.status !== 'rejected'}<button onclick={(e) => { e.stopPropagation(); moveTask(task, 'rejected'); }}>✗ Reject</button>{/if}
                     {#if task.status === 'done'}<button onclick={(e) => { e.stopPropagation(); moveTask(task, 'todo'); }}>↺ Reopen</button>{/if}
                     <button onclick={(e) => { e.stopPropagation(); startEdit(task); }}>Edit</button>
                     <button class="danger" onclick={(e) => { e.stopPropagation(); deleteTask(task.id); }}>Delete</button>
@@ -329,13 +332,14 @@
   button { padding: 6px 10px; border-radius: 8px; border: 1px solid #cbd5e1; background: white; cursor: pointer; font-size: 13px; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button.danger { border-color: #fca5a5; color: #991b1b; }
-  .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
   @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
   .column { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; min-height: 240px; }
   .column h2 { margin: 0 0 10px; font-size: 14px; display: flex; gap: 6px; align-items: center; }
   .column.todo h2 { color: #64748b; }
   .column.in_progress h2 { color: #ea580c; }
   .column.done h2 { color: #16a34a; }
+  .column.rejected h2 { color: #dc2626; }
   .badge { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 999px; padding: 0 6px; font-size: 11px; }
   .new-task { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
   .new-task input, .new-task textarea { padding: 6px 8px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; font-family: inherit; resize: vertical; }

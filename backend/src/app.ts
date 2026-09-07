@@ -19,6 +19,7 @@ import {
   deleteTask,
 } from './store.ts';
 import { validateProjectBody, validateTaskBody } from './validate.ts';
+import { sendTelegram, taskStatusMessage } from './notify.ts';
 import path from 'node:path';
 import { existsSync, statSync } from 'node:fs';
 
@@ -161,9 +162,16 @@ export function createApp(ctx: AppCtx, opts?: { staticDir?: string }) {
       if ('agent_id' in v.value) patch.agentId = v.value.agent_id ?? null;
       if (Object.keys(patch).length === 0) return err('no fields to update', 400);
       try {
+        const before = await getTask(ctx.db, id);
         const updated = await updateTask(ctx.db, id, patch);
         if (!updated) return err('task not found', 404);
         await ctx.bus.emit('task.updated', updated);
+        // Telegram notification on status change
+        if (patch.status && before && patch.status !== before.status) {
+          const reason = patch.status === 'rejected' ? updated.description : undefined;
+          const msg = taskStatusMessage(updated.title, patch.status, reason);
+          if (msg) sendTelegram(msg);
+        }
         return json(updated);
       } catch (e) {
         if (e instanceof ConflictError) return err(e.message, 409);

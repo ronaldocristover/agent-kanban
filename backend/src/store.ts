@@ -1,8 +1,8 @@
 import { nanoid } from 'nanoid';
 import type { Db } from './db.ts';
 
-export type Status = 'todo' | 'in_progress' | 'done';
-export const STATUSES: readonly Status[] = ['todo', 'in_progress', 'done'] as const;
+export type Status = 'todo' | 'in_progress' | 'done' | 'rejected';
+export const STATUSES: readonly Status[] = ['todo', 'in_progress', 'done', 'rejected'] as const;
 
 export type Project = {
   id: string;
@@ -12,7 +12,7 @@ export type Project = {
   updatedAt: string;
 };
 
-export type TaskCounts = { todo: number; in_progress: number; done: number; total: number };
+export type TaskCounts = { todo: number; in_progress: number; done: number; rejected: number; total: number };
 
 export type ProjectWithCounts = Project & { taskCounts: TaskCounts };
 
@@ -134,7 +134,7 @@ export async function getProject(db: Db, id: string): Promise<Project | undefine
 
 export async function getTaskCounts(db: Db, projectId: string): Promise<TaskCounts> {
   const rows = await db.query<{ status: Status; n: number }>('SELECT status, COUNT(*) AS n FROM tasks WHERE project_id = ? GROUP BY status', [projectId]);
-  const counts: TaskCounts = { todo: 0, in_progress: 0, done: 0, total: 0 };
+  const counts: TaskCounts = { todo: 0, in_progress: 0, done: 0, rejected: 0, total: 0 };
   for (const r of rows) {
     counts[r.status] = Number(r.n);
     counts.total += Number(r.n);

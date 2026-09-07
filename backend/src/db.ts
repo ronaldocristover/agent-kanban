@@ -153,7 +153,7 @@ async function migrate(db: Db) {
         project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         title       TEXT NOT NULL,
         description TEXT,
-        status      TEXT NOT NULL CHECK (status IN ('todo','in_progress','done')),
+        status      TEXT NOT NULL CHECK (status IN ('todo','in_progress','done','rejected')),
         agent_id    TEXT,
         locked_at   TEXT,
         created_at  TEXT NOT NULL,
@@ -205,7 +205,7 @@ async function migrate(db: Db) {
         project_id  VARCHAR(16) NOT NULL,
         title       VARCHAR(255) NOT NULL,
         description TEXT,
-        status      ENUM('todo','in_progress','done') NOT NULL,
+        status      ENUM('todo','in_progress','done','rejected') NOT NULL,
         agent_id    VARCHAR(128),
         locked_at   VARCHAR(64),
         created_at  VARCHAR(64) NOT NULL,
@@ -215,6 +215,8 @@ async function migrate(db: Db) {
     `);
     // Add locked_at for existing MySQL DBs
     try { await db.exec('ALTER TABLE tasks ADD COLUMN locked_at VARCHAR(64)'); } catch {}
+    // Add 'rejected' to status ENUM for existing MySQL DBs
+    try { await db.exec("ALTER TABLE tasks MODIFY COLUMN status ENUM('todo','in_progress','done','rejected') NOT NULL"); } catch {}
     await db.exec(`
       CREATE TABLE IF NOT EXISTS events (
         id         INT AUTO_INCREMENT PRIMARY KEY,

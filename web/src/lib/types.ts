@@ -1,4 +1,4 @@
-export type Status = 'todo' | 'in_progress' | 'done';
+export type Status = 'todo' | 'in_progress' | 'done' | 'rejected';
 
 export type Project = {
   id: string;
@@ -8,7 +8,7 @@ export type Project = {
   updatedAt: string;
 };
 
-export type TaskCounts = { todo: number; in_progress: number; done: number; total: number };
+export type TaskCounts = { todo: number; in_progress: number; done: number; rejected: number; total: number };
 
 export type ProjectWithCounts = Project & { taskCounts: TaskCounts };
 

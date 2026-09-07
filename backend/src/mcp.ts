@@ -104,7 +104,7 @@ export function createMcpServer() {
       description: 'List tasks with optional filters',
       inputSchema: {
         project_id: z.string().optional(),
-        status: z.enum(['todo', 'in_progress', 'done']).optional(),
+        status: z.enum(['todo', 'in_progress', 'done', 'rejected']).optional(),
         agent_id: z.string().optional(),
       },
     },
@@ -131,7 +131,7 @@ export function createMcpServer() {
         project_id: z.string(),
         title: z.string().min(1),
         description: z.string().optional(),
-        status: z.enum(['todo', 'in_progress', 'done']).optional(),
+        status: z.enum(['todo', 'in_progress', 'done', 'rejected']).optional(),
       },
     },
     async ({  project_id, title, description, status  }: any) => {
@@ -155,7 +155,7 @@ export function createMcpServer() {
         id: z.string(),
         title: z.string().optional(),
         description: z.string().nullable().optional(),
-        status: z.enum(['todo', 'in_progress', 'done']).optional(),
+        status: z.enum(['todo', 'in_progress', 'done', 'rejected']).optional(),
         agent_id: z.string().nullable().optional(),
       },
     },
